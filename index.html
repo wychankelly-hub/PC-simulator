@@ -5,8 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>《砌機大挑戰》擬真主機板模擬器</title>
 
-<!-- DragDropTouch Polyfill for iPad/Touch Devices -->
+<!-- DragDropTouch Polyfill for Touch/iPad Devices -->
 <script src="https://cdn.jsdelivr.net/npm/drag-drop-touch@1.3.1/DragDropTouch.js"></script>
+
+<!-- Firebase SDKs for Real-Time Cross-Device Synchronization -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
 <style>
   :root {
@@ -31,7 +35,6 @@
   .main-container { display: flex; flex-wrap: wrap; padding: 15px; gap: 15px; }
   .game-area { flex: 3; min-width: 320px; display: flex; flex-direction: column; gap: 15px; }
   
-  /* ATX 主機板外框 */
   .board-wrapper {
     position: relative;
     width: 100%; overflow-x: auto; background-color: #020617; border-radius: 20px;
@@ -57,7 +60,7 @@
   .board-cmos { position: absolute; top: 280px; left: 190px; width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(#e2e8f0, #94a3b8); border: 2px solid #475569; display: flex; align-items: center; justify-content: center; font-size: 0.5rem; font-weight: bold; color: #1e293b; }
   .board-title { position: absolute; top: 10px; right: 20px; color: #64748b; font-size: 0.8rem; font-weight: 800; letter-spacing: 1px; }
 
-  /* 插槽精確定位 */
+  /* Slot Placement Positioning */
   .slot {
     position: absolute; border: 2px dashed #94a3b8; border-radius: 6px; display: flex;
     align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 800;
@@ -74,7 +77,6 @@
   .slot.highlight { border-color: var(--accent-blue); background: rgba(37, 99, 235, 0.4); transform: scale(1.02); }
   .slot.wrong { border-color: var(--accent-red); background: rgba(220, 38, 38, 0.3); animation: shake 0.3s; }
 
-  /* 正確放置後純色塊樣式 */
   .slot.correct { border-style: solid; border-width: 2px; pointer-events: none; }
   .slot.correct .slot-label { font-size: 0.68rem; font-weight: bold; color: #ffffff; z-index: 2; }
 
@@ -86,7 +88,6 @@
   .slot.correct[data-type="cpu"] { background: #3b82f6 !important; border-color: #60a5fa; }
   .slot.correct[data-type="fan"] { background: #0284c7 !important; border-color: #38bdf8; }
 
-  /* 插槽座標 */
   #slot-power { top: 60px; right: 20px; width: 42px; height: 180px; border-color: #ca8a04; }
   #slot-cpu { top: 65px; left: 215px; width: 110px; height: 110px; border-color: #cbd5e1; background: #334155; }
   #slot-fan { top: 55px; left: 205px; width: 130px; height: 130px; display: none; z-index: 5; }
@@ -96,7 +97,6 @@
   #slot-pcie { top: 270px; left: 80px; width: 280px; height: 40px; border-color: #38b000; }
   #slot-sata { bottom: 25px; right: 200px; width: 75px; height: 80px; border-color: #2563eb; }
 
-  /* 零件庫 */
   .components-panel {
     min-height: 125px; background: var(--card-bg); border-radius: 16px; padding: 12px;
     display: flex; gap: 12px; align-items: center; overflow-x: auto; border: 3px solid var(--border-dark);
@@ -125,7 +125,6 @@
   .leaderboard-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 5px; }
   .leaderboard-table th, .leaderboard-table td { padding: 6px; text-align: left; border-bottom: 2px solid #e2e8f0; font-weight: 700; }
 
-  /* Section 2: 硬體功能知識庫 */
   .hardware-knowledge-section {
     margin: 0 15px 15px 15px; background: var(--card-bg); border-radius: 20px;
     padding: 20px; border: 4px solid var(--border-dark); box-shadow: 4px 4px 0px var(--border-dark);
@@ -140,10 +139,7 @@
   .knowledge-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; color: var(--accent-blue); font-size: 0.9rem; }
   .knowledge-body { display: none; margin-top: 8px; font-size: 0.82rem; color: var(--text-sub); line-height: 1.5; border-top: 2px dashed #cbd5e1; padding-top: 8px; }
   .knowledge-card.active .knowledge-body { display: block; }
-  .knowledge-card.active .arrow { transform: rotate(180deg); }
-  .arrow { transition: transform 0.2s; font-size: 0.8rem; }
 
-  /* Section 3: 相片圖鑑 */
   .reference-gallery {
     margin: 0 15px 15px 15px; background: var(--card-bg); border-radius: 20px;
     padding: 20px; border: 4px solid var(--border-dark); box-shadow: 4px 4px 0px var(--border-dark);
@@ -176,7 +172,6 @@
   </div>
 </header>
 
-<!-- Section 1: 遊戲互動區與排行榜 -->
 <div class="main-container">
   <div class="game-area">
     <div class="board-wrapper">
@@ -207,7 +202,6 @@
       </div>
     </div>
 
-    <!-- 零件庫 -->
     <div class="components-panel">
       <div class="component" draggable="true" id="comp-power" data-type="power"><div class="comp-icon" data-svg="POWER"></div><span>ATX 電源線</span></div>
       <div class="component" draggable="true" id="comp-cpu" data-type="cpu"><div class="comp-icon" data-svg="CPU"></div><span>CPU 處理器</span></div>
@@ -222,19 +216,18 @@
 
   <div class="side-panel">
     <div class="panel-card">
-      <h3>🏆 全班即時競賽榜</h3>
+      <h3>🏆 全班雲端跨裝置排行榜</h3>
       <div style="max-height: 250px; overflow-y: auto;">
         <table class="leaderboard-table">
           <thead><tr><th>排名</th><th>暱稱</th><th>分數</th><th>用時</th></tr></thead>
           <tbody id="leaderboard-body"></tbody>
         </table>
       </div>
-      <button class="btn btn-danger" onclick="clearLeaderboard()" style="font-size:0.75rem;">老師專用：清空排行榜</button>
+      <button class="btn btn-danger" onclick="clearLeaderboard()" style="font-size:0.75rem;">老師專用：清空雲端排行榜</button>
     </div>
   </div>
 </div>
 
-<!-- Section 2: 硬體功能說明與知識庫 -->
 <section class="hardware-knowledge-section">
   <div class="section-title">📘 系統硬體單元功能說明 (點擊卡片展開細節)</div>
   <div class="knowledge-grid">
@@ -306,7 +299,6 @@
   </div>
 </section>
 
-<!-- Section 3：真實硬體相片圖鑑 -->
 <section class="reference-gallery">
   <div class="section-title">📸 現代電腦硬體真實相片圖鑑 (點擊圖片放大查看細節)</div>
   <div class="gallery-grid">
@@ -341,7 +333,6 @@
   </div>
 </section>
 
-<!-- 錯誤 Warning 彈窗 -->
 <div class="modal-overlay" id="error-modal">
   <div class="modal" style="border-color: var(--accent-red);">
     <h3 style="color: var(--accent-red);">⚠️ 安裝錯誤 Warning</h3>
@@ -354,7 +345,6 @@
   </div>
 </div>
 
-<!-- 結算彈窗 -->
 <div class="modal-overlay" id="result-modal">
   <div class="modal">
     <h2>🎉 組裝成功！</h2>
@@ -369,6 +359,17 @@
 </div>
 
 <script>
+  // Shared Public Firebase Database for Classroom Synchronization
+  const firebaseConfig = {
+    databaseURL: "https://pc-assembly-simulator-default-rtdb.asia-southeast1.firebasedatabase.app"
+  };
+  
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  const db = firebase.database();
+  const leaderboardRef = db.ref('leaderboard');
+
   const HARDWARE_FUNCTIONS = {
     cpu: { name: "CPU (中央處理器)", desc: "電腦的大腦，負責執行所有指令、算術運算與邏輯判斷。必須安裝在主機板的 LGA/AM5 座扣具內。" },
     fan: { name: "CPU 散熱器", desc: "防止 CPU 高速運作時因過熱而降頻或燒毀，必須緊貼在 CPU 上方將熱量排出。" },
@@ -394,14 +395,6 @@
     if (RAW_SVGS[key]) el.innerHTML = RAW_SVGS[key];
   });
 
-  const syncChannel = window.BroadcastChannel ? new BroadcastChannel('diy_competition_channel') : null;
-  if (syncChannel) {
-    syncChannel.onmessage = (e) => {
-      if (e.data?.type === 'SCORE_UPDATE') saveLocalAndRender(e.data.record, false);
-      if (e.data?.type === 'CLEAR_ALL') { localStorage.removeItem('diy_leaderboard'); renderLeaderboard(); }
-    };
-  }
-
   let activeSelectedComp = null;
   let draggedType = null;
   let installedCount = 0;
@@ -422,7 +415,6 @@
     card.classList.toggle('active');
   }
 
-  // Drag Event Handlers
   document.querySelectorAll('.component').forEach(c => {
     c.addEventListener('dragstart', function(e) { 
       draggedType = this.dataset.type;
@@ -530,23 +522,23 @@
     const finalScore = parseInt(document.getElementById('final-score').textContent);
     const record = { name, score: finalScore, time: 180 - timeRemaining };
 
-    saveLocalAndRender(record, true);
+    leaderboardRef.push(record);
     document.getElementById('result-modal').style.display = 'none';
   }
 
-  function saveLocalAndRender(record, shouldBroadcast) {
-    let list = JSON.parse(localStorage.getItem('diy_leaderboard') || '[]');
-    if (record) list.push(record);
-    list.sort((a,b) => b.score - a.score || a.time - b.time);
-    list = list.slice(0, 10);
-    localStorage.setItem('diy_leaderboard', JSON.stringify(list));
-    
-    renderLeaderboard();
-    if (shouldBroadcast && syncChannel) syncChannel.postMessage({ type: 'SCORE_UPDATE', record });
-  }
+  // Real-time listener: updates instantly across all connected student devices
+  leaderboardRef.on('value', (snapshot) => {
+    const data = snapshot.val();
+    let list = [];
+    if (data) {
+      list = Object.values(data);
+      list.sort((a,b) => b.score - a.score || a.time - b.time);
+      list = list.slice(0, 10);
+    }
+    renderLeaderboard(list);
+  });
 
-  function renderLeaderboard() {
-    const list = JSON.parse(localStorage.getItem('diy_leaderboard') || '[]');
+  function renderLeaderboard(list) {
     const tbody = document.getElementById('leaderboard-body');
     tbody.innerHTML = list.map((item, i) => `
       <tr>
@@ -559,10 +551,8 @@
   }
 
   function clearLeaderboard() {
-    if (confirm("確定清空全班成績？")) {
-      localStorage.removeItem('diy_leaderboard');
-      renderLeaderboard();
-      if (syncChannel) syncChannel.postMessage({ type: 'CLEAR_ALL' });
+    if (confirm("確定清空全班雲端成績？")) {
+      leaderboardRef.remove();
     }
   }
 
@@ -578,8 +568,6 @@
   function escapeHtml(str) {
     return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
   }
-
-  renderLeaderboard();
 </script>
 </body>
 </html>
