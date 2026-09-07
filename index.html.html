@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>《砌機大挑戰》擬真主機板模擬器</title>
+
+<!-- DragDropTouch Polyfill for iPad/Touch Devices -->
+<script src="https://cdn.jsdelivr.net/npm/drag-drop-touch@1.3.1/DragDropTouch.js"></script>
+
+<style>
+  :root {
+    --bg-color: #f1f5f9;
+    --card-bg: #ffffff;
+    --accent-blue: #2563eb;
+    --accent-green: #16a34a;
+    --accent-red: #dc2626;
+    --border-dark: #0f172a;
+    --text-main: #0f172a;
+    --text-sub: #475569;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: 'Comic Sans MS', "Microsoft JhengHei", sans-serif; -webkit-tap-highlight-color: transparent; }
+  body { background-color: var(--bg-color); color: var(--text-main); min-height: 100vh; padding-bottom: 40px; touch-action: manipulation; }
+  
+  header { background: #ffffff; padding: 12px 24px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; border-bottom: 4px solid var(--border-dark); gap: 10px; }
+  h1 { font-size: 1.3rem; color: var(--border-dark); font-weight: 800; }
+  .status-bar { display: flex; gap: 12px; font-size: 0.9rem; font-weight: 700; background: #fff; border: 3px solid var(--border-dark); padding: 6px 14px; border-radius: 20px; }
+
+  /* Section 1: Main Game Layout */
+  .main-container { display: flex; flex-wrap: wrap; padding: 15px; gap: 15px; }
+  .game-area { flex: 3; min-width: 320px; display: flex; flex-direction: column; gap: 15px; }
+  
+  /* ATX 主機板外框 */
+  .board-wrapper {
+    position: relative;
+    width: 100%; overflow-x: auto; background-color: #020617; border-radius: 20px;
+    border: 4px solid var(--border-dark); box-shadow: 6px 6px 0px var(--border-dark);
+    padding: 15px;
+  }
+  
+  .board-container { 
+    width: 680px; height: 480px; position: relative; margin: 0 auto;
+    background-color: #1e293b; border: 3px solid #475569; border-radius: 12px;
+    background-image: 
+      radial-gradient(#334155 1.5px, transparent 1.5px),
+      linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 16px 16px, 32px 32px, 32px 32px;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+  }
+
+  .vrm-heatsink-top { position: absolute; top: 15px; left: 160px; width: 180px; height: 35px; background: linear-gradient(135deg, #64748b, #334155); border: 2px solid #94a3b8; border-radius: 4px; }
+  .vrm-heatsink-left { position: absolute; top: 55px; left: 160px; width: 35px; height: 130px; background: linear-gradient(135deg, #64748b, #334155); border: 2px solid #94a3b8; border-radius: 4px; }
+  .chipset-heatsink { position: absolute; bottom: 30px; right: 80px; width: 90px; height: 90px; background: linear-gradient(135deg, #475569, #0f172a); border: 2px solid #64748b; border-radius: 8px; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-weight:bold; font-size:0.7rem; }
+  .board-io-panel { position: absolute; top: 15px; left: 10px; width: 40px; height: 340px; border: 2px solid #94a3b8; background: #cbd5e1; border-radius: 4px; }
+  .board-cmos { position: absolute; top: 280px; left: 190px; width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(#e2e8f0, #94a3b8); border: 2px solid #475569; display: flex; align-items: center; justify-content: center; font-size: 0.5rem; font-weight: bold; color: #1e293b; }
+  .board-title { position: absolute; top: 10px; right: 20px; color: #64748b; font-size: 0.8rem; font-weight: 800; letter-spacing: 1px; }
+
+  /* 插槽精確定位 */
+  .slot {
+    position: absolute; border: 2px dashed #94a3b8; border-radius: 6px; display: flex;
+    align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 800;
+    color: #f8fafc; transition: all 0.2s ease; text-align: center; padding: 2px;
+    background: rgba(15, 23, 42, 0.75); cursor: pointer; overflow: hidden;
+  }
+  
+  .slot .svg-container {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    display: none; align-items: center; justify-content: center;
+  }
+  .slot .svg-container svg { width: 100%; height: 100%; object-fit: contain; }
+
+  .slot.highlight { border-color: var(--accent-blue); background: rgba(37, 99, 235, 0.4); transform: scale(1.02); }
+  .slot.wrong { border-color: var(--accent-red); background: rgba(220, 38, 38, 0.3); animation: shake 0.3s; }
+
+  /* 正確放置後純色塊樣式 */
+  .slot.correct { border-style: solid; border-width: 2px; pointer-events: none; }
+  .slot.correct .slot-label { font-size: 0.68rem; font-weight: bold; color: #ffffff; z-index: 2; }
+
+  .slot.correct[data-type="ram"] { background: #ff0055 !important; border-color: #ff528c; }
+  .slot.correct[data-type="m2"] { background: #ff8c00 !important; border-color: #ffaa44; }
+  .slot.correct[data-type="pcie"] { background: #7b2cbf !important; border-color: #9d4edd; }
+  .slot.correct[data-type="power"] { background: #10b981 !important; border-color: #34d399; }
+  .slot.correct[data-type="sata"] { background: #06b6d4 !important; border-color: #22d3ee; }
+  .slot.correct[data-type="cpu"] { background: #3b82f6 !important; border-color: #60a5fa; }
+  .slot.correct[data-type="fan"] { background: #0284c7 !important; border-color: #38bdf8; }
+
+  /* 插槽座標 */
+  #slot-power { top: 60px; right: 20px; width: 42px; height: 180px; border-color: #ca8a04; }
+  #slot-cpu { top: 65px; left: 215px; width: 110px; height: 110px; border-color: #cbd5e1; background: #334155; }
+  #slot-fan { top: 55px; left: 205px; width: 130px; height: 130px; display: none; z-index: 5; }
+  #slot-ram1 { top: 60px; left: 360px; width: 22px; height: 180px; border-color: #eab308; }
+  #slot-ram2 { top: 60px; left: 390px; width: 22px; height: 180px; border-color: #eab308; }
+  #slot-m2 { top: 215px; left: 215px; width: 135px; height: 32px; border-color: #c026d3; }
+  #slot-pcie { top: 270px; left: 80px; width: 280px; height: 40px; border-color: #38b000; }
+  #slot-sata { bottom: 25px; right: 200px; width: 75px; height: 80px; border-color: #2563eb; }
+
+  /* 零件庫 */
+  .components-panel {
+    min-height: 125px; background: var(--card-bg); border-radius: 16px; padding: 12px;
+    display: flex; gap: 12px; align-items: center; overflow-x: auto; border: 3px solid var(--border-dark);
+    box-shadow: 4px 4px 0px var(--border-dark);
+  }
+  .component {
+    min-width: 100px; height: 105px; background: #ffffff; border-radius: 12px; border: 3px solid var(--border-dark);
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+    cursor: grab; transition: all 0.2s; font-size: 0.75rem; font-weight: 800; text-align: center; padding: 6px;
+    touch-action: none; box-shadow: 2px 2px 0px var(--border-dark);
+  }
+  .component.selected { border-color: var(--accent-blue); background: #dbeafe; transform: scale(1.05); }
+  .component.installed { opacity: 0.2; pointer-events: none; filter: grayscale(100%); box-shadow: none; }
+  .comp-icon { width: 100%; height: 60px; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  .comp-icon svg { width: 100%; height: 100%; }
+
+  .warning-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 50; border-radius: 16px; cursor: pointer; }
+  .warning-box { background: #ffffff; border: 4px solid var(--accent-red); padding: 20px 30px; border-radius: 16px; text-align: center; box-shadow: 6px 6px 0px var(--border-dark); max-width: 85%; }
+  .warning-box h3 { color: var(--accent-red); font-size: 1.2rem; margin-bottom: 8px; }
+
+  .side-panel { flex: 1; min-width: 280px; display: flex; flex-direction: column; gap: 15px; }
+  .panel-card { background: var(--card-bg); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 10px; border: 3px solid var(--border-dark); box-shadow: 4px 4px 0px var(--border-dark); }
+  .btn { padding: 10px; border: 3px solid var(--border-dark); border-radius: 10px; font-weight: 800; cursor: pointer; background: var(--accent-blue); color: #fff; font-size: 0.85rem; box-shadow: 2px 2px 0px var(--border-dark); }
+  .btn-danger { background: var(--accent-red); }
+
+  .leaderboard-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 5px; }
+  .leaderboard-table th, .leaderboard-table td { padding: 6px; text-align: left; border-bottom: 2px solid #e2e8f0; font-weight: 700; }
+
+  /* Section 2: 硬體功能知識庫 */
+  .hardware-knowledge-section {
+    margin: 0 15px 15px 15px; background: var(--card-bg); border-radius: 20px;
+    padding: 20px; border: 4px solid var(--border-dark); box-shadow: 4px 4px 0px var(--border-dark);
+  }
+  .section-title { font-size: 1.1rem; font-weight: 800; margin-bottom: 12px; color: var(--border-dark); display: flex; align-items: center; gap: 8px; }
+  .knowledge-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .knowledge-card {
+    background: #f8fafc; border: 3px solid var(--border-dark); border-radius: 12px;
+    padding: 12px; cursor: pointer; transition: all 0.2s;
+  }
+  .knowledge-card:hover { transform: translateY(-2px); box-shadow: 2px 4px 0px var(--border-dark); }
+  .knowledge-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; color: var(--accent-blue); font-size: 0.9rem; }
+  .knowledge-body { display: none; margin-top: 8px; font-size: 0.82rem; color: var(--text-sub); line-height: 1.5; border-top: 2px dashed #cbd5e1; padding-top: 8px; }
+  .knowledge-card.active .knowledge-body { display: block; }
+  .knowledge-card.active .arrow { transform: rotate(180deg); }
+  .arrow { transition: transform 0.2s; font-size: 0.8rem; }
+
+  /* Section 3: 相片圖鑑 */
+  .reference-gallery {
+    margin: 0 15px 15px 15px; background: var(--card-bg); border-radius: 20px;
+    padding: 20px; border: 4px solid var(--border-dark); box-shadow: 4px 4px 0px var(--border-dark);
+  }
+  .gallery-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+  .gallery-item { background: #f8fafc; border: 3px solid var(--border-dark); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
+  .gallery-img-container { position: relative; width: 100%; height: 120px; cursor: zoom-in; overflow: hidden; border-radius: 8px; border: 2px solid var(--border-dark); }
+  .gallery-img-container img { width: 100%; height: 100%; object-fit: cover; }
+  .zoom-badge { position: absolute; bottom: 4px; right: 4px; background: rgba(30, 41, 59, 0.85); color: #fff; font-size: 0.6rem; padding: 2px 5px; border-radius: 4px; font-weight: bold; }
+
+  .modal-overlay { position: fixed; top:0; left:0; width:100vw; height:100vh; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(4px); display:none; justify-content:center; align-items:center; z-index: 100; }
+  .modal { background: var(--card-bg); padding: 22px; border-radius: 20px; width: 90%; max-width: 440px; text-align: center; border: 4px solid var(--border-dark); box-shadow: 6px 6px 0px var(--border-dark); }
+
+  .unit-info-card { text-align: left; background: #f8fafc; border: 2px solid var(--border-dark); padding: 12px; border-radius: 12px; margin: 10px 0; font-size: 0.85rem; line-height: 1.4; }
+  .unit-info-title { font-weight: bold; color: var(--accent-blue); margin-bottom: 4px; }
+
+  .lightbox-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(6px); justify-content: center; align-items: center; z-index: 200; cursor: zoom-out; }
+  .lightbox-content { max-width: 85vw; max-height: 80vh; border-radius: 12px; border: 4px solid #ffffff; object-fit: contain; }
+
+  @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🖥️ 《砌機大挑戰》跨裝置模擬器</h1>
+  <div class="status-bar">
+    <div>⏱️ <span id="timer-display">180</span>s</div>
+    <div>📦 <span id="progress-display">0/8</span></div>
+  </div>
+</header>
+
+<!-- Section 1: 遊戲互動區與排行榜 -->
+<div class="main-container">
+  <div class="game-area">
+    <div class="board-wrapper">
+      <div class="warning-overlay" id="warning-popup" onclick="closeWarning()">
+        <div class="warning-box">
+          <h3>⚠️ 組裝前安全警告 Warning</h3>
+          <p>請先切斷電源，並確保身體配戴防靜電手環！</p>
+          <span style="font-size:0.75rem; color:var(--text-sub); display:block; margin-top:8px;">（點擊螢幕任意位置即可關閉）</span>
+        </div>
+      </div>
+
+      <div class="board-container" id="board">
+        <div class="vrm-heatsink-top"></div>
+        <div class="vrm-heatsink-left"></div>
+        <div class="chipset-heatsink">CHIPSET</div>
+        <div class="board-io-panel"></div>
+        <div class="board-cmos">CMOS</div>
+        <div class="board-title">PRO ATX MOTHERBOARD</div>
+
+        <div class="slot" id="slot-power" data-type="power"><span class="slot-label">24-pin<br>電源插座</span><div class="svg-container"></div></div>
+        <div class="slot" id="slot-cpu" data-type="cpu"><span class="slot-label">LGA CPU<br>座扣具</span><div class="svg-container"></div></div>
+        <div class="slot" id="slot-fan" data-type="fan"><span class="slot-label">CPU 風扇</span><div class="svg-container"></div></div>
+        <div class="slot" id="slot-ram1" data-type="ram"><span class="slot-label">RAM 1</span><div class="svg-container"></div></div>
+        <div class="slot" id="slot-ram2" data-type="ram"><span class="slot-label">RAM 2</span><div class="svg-container"></div></div>
+        <div class="slot" id="slot-m2" data-type="m2"><span class="slot-label">M.2 SSD 裝甲位</span><div class="svg-container"></div></div>
+        <div class="slot" id="slot-pcie" data-type="pcie"><span class="slot-label">PCIe 5.0 x16 獨立顯示卡槽</span><div class="svg-container"></div></div>
+        <div class="slot" id="slot-sata" data-type="sata"><span class="slot-label">SATA 6Gbps</span><div class="svg-container"></div></div>
+      </div>
+    </div>
+
+    <!-- 零件庫 -->
+    <div class="components-panel">
+      <div class="component" draggable="true" id="comp-power" data-type="power"><div class="comp-icon" data-svg="POWER"></div><span>ATX 電源線</span></div>
+      <div class="component" draggable="true" id="comp-cpu" data-type="cpu"><div class="comp-icon" data-svg="CPU"></div><span>CPU 處理器</span></div>
+      <div class="component" draggable="true" id="comp-fan" data-type="fan"><div class="comp-icon" data-svg="FAN"></div><span>CPU 散熱器</span></div>
+      <div class="component" draggable="true" id="comp-ram1" data-type="ram"><div class="comp-icon" data-svg="RAM"></div><span>DDR5 RAM 1</span></div>
+      <div class="component" draggable="true" id="comp-ram2" data-type="ram"><div class="comp-icon" data-svg="RAM"></div><span>DDR5 RAM 2</span></div>
+      <div class="component" draggable="true" id="comp-ssd" data-type="m2"><div class="comp-icon" data-svg="M2"></div><span>M.2 SSD</span></div>
+      <div class="component" draggable="true" id="comp-hdd" data-type="sata"><div class="comp-icon" data-svg="SATA"></div><span>SATA 硬碟</span></div>
+      <div class="component" draggable="true" id="comp-gpu" data-type="pcie"><div class="comp-icon" data-svg="GPU"></div><span>PCIe 顯示卡</span></div>
+    </div>
+  </div>
+
+  <div class="side-panel">
+    <div class="panel-card">
+      <h3>🏆 全班即時競賽榜</h3>
+      <div style="max-height: 250px; overflow-y: auto;">
+        <table class="leaderboard-table">
+          <thead><tr><th>排名</th><th>暱稱</th><th>分數</th><th>用時</th></tr></thead>
+          <tbody id="leaderboard-body"></tbody>
+        </table>
+      </div>
+      <button class="btn btn-danger" onclick="clearLeaderboard()" style="font-size:0.75rem;">老師專用：清空排行榜</button>
+    </div>
+  </div>
+</div>
+
+<!-- Section 2: 硬體功能說明與知識庫 -->
+<section class="hardware-knowledge-section">
+  <div class="section-title">📘 系統硬體單元功能說明 (點擊卡片展開細節)</div>
+  <div class="knowledge-grid">
+    <div class="knowledge-card" onclick="toggleKnowledge(this)">
+      <div class="knowledge-header">
+        <span>🧠 CPU (中央處理器)</span>
+        <span class="arrow">▼</span>
+      </div>
+      <div class="knowledge-body">
+        <strong>核心功能：</strong> 電腦的大腦，負責執行作業系統與軟體的所有指令、算術與邏輯運算。<br>
+        <strong>安裝說明：</strong> 必須精確對齊主機板上的 LGA 或 AM5 插座防呆缺口，並鎖緊壓桿。
+      </div>
+    </div>
+
+    <div class="knowledge-card" onclick="toggleKnowledge(this)">
+      <div class="knowledge-header">
+        <span>⚡ DDR5 / SDRAM (主記憶體)</span>
+        <span class="arrow">▼</span>
+      </div>
+      <div class="knowledge-body">
+        <strong>核心功能：</strong> 隨機存取記憶體，為 CPU 提供高速的臨時資料讀寫通道。關機後資料會自動消失。<br>
+        <strong>安裝說明：</strong> 對準 DIMM 插槽中央的防呆凸起，雙手同時用力向下壓直至兩端扣具自動扣上。
+      </div>
+    </div>
+
+    <div class="knowledge-card" onclick="toggleKnowledge(this)">
+      <div class="knowledge-header">
+        <span>🎮 PCIe GPU (獨立顯示卡)</span>
+        <span class="arrow">▼</span>
+      </div>
+      <div class="knowledge-body">
+        <strong>核心功能：</strong> 專門處理 3D 圖像渲染、影片剪輯與 AI 深度學習算力。<br>
+        <strong>安裝說明：</strong> 插入主機板第一條金屬加固的 PCIe x16 插槽，並確認尾端安全鎖扣已彈回鎖定。
+      </div>
+    </div>
+
+    <div class="knowledge-card" onclick="toggleKnowledge(this)">
+      <div class="knowledge-header">
+        <span>🚀 M.2 NVMe SSD (固態硬碟)</span>
+        <span class="arrow">▼</span>
+      </div>
+      <div class="knowledge-body">
+        <strong>核心功能：</strong> 採用 PCIe 通道的高速非揮發性儲存設備，用於安裝 OS 與長期存放個人檔案。<br>
+        <strong>安裝說明：</strong> 以 30 度角斜向插入 M.2 插槽，向下壓平後鎖上螺絲或快拆扣具。
+      </div>
+    </div>
+
+    <div class="knowledge-card" onclick="toggleKnowledge(this)">
+      <div class="knowledge-header">
+        <span>❄️ CPU 散熱器 (Heatsink / Fan)</span>
+        <span class="arrow">▼</span>
+      </div>
+      <div class="knowledge-body">
+        <strong>核心功能：</strong> 將 CPU 運作時產生的高溫快速導出，防止系統過熱降頻或當機。<br>
+        <strong>安裝說明：</strong> 安裝前必須在 CPU 表面塗抹適量散熱膏，並固定於 CPU 正上方。
+      </div>
+    </div>
+
+    <div class="knowledge-card" onclick="toggleKnowledge(this)">
+      <div class="knowledge-header">
+        <span>🔌 24-Pin ATX 主機板電源插座</span>
+        <span class="arrow">▼</span>
+      </div>
+      <div class="knowledge-body">
+        <strong>核心功能：</strong> 將電源供應器 (PSU) 的電力輸送至主機板，為晶片組、記憶體及周邊供電。<br>
+        <strong>安裝說明：</strong> 認準卡扣方向，垂直插入直至聽見卡嗒鎖定聲。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Section 3：真實硬體相片圖鑑 -->
+<section class="reference-gallery">
+  <div class="section-title">📸 現代電腦硬體真實相片圖鑑 (點擊圖片放大查看細節)</div>
+  <div class="gallery-grid">
+    <div class="gallery-item">
+      <div class="gallery-img-container" onclick="openLightbox('https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?w=1200&q=80')">
+        <img src="https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?w=400&q=80" alt="CPU">
+        <span class="zoom-badge">🔍 點擊放大</span>
+      </div>
+      <div style="font-weight:bold; font-size:0.85rem; color:var(--accent-blue);">CPU (中央處理器)</div>
+    </div>
+    <div class="gallery-item">
+      <div class="gallery-img-container" onclick="openLightbox('https://images.unsplash.com/photo-1562976540-1502c2145186?w=1200&q=80')">
+        <img src="https://images.unsplash.com/photo-1562976540-1502c2145186?w=400&q=80" alt="RAM">
+        <span class="zoom-badge">🔍 點擊放大</span>
+      </div>
+      <div style="font-weight:bold; font-size:0.85rem; color:var(--accent-blue);">SDRAM (主記憶體)</div>
+    </div>
+    <div class="gallery-item">
+      <div class="gallery-img-container" onclick="openLightbox('https://images.unsplash.com/photo-1555680202-c86f0e12f086?w=1200&q=80')">
+        <img src="https://images.unsplash.com/photo-1555680202-c86f0e12f086?w=400&q=80" alt="GPU">
+        <span class="zoom-badge">🔍 點擊放大</span>
+      </div>
+      <div style="font-weight:bold; font-size:0.85rem; color:var(--accent-blue);">GPU (獨立顯示卡)</div>
+    </div>
+    <div class="gallery-item">
+      <div class="gallery-img-container" onclick="openLightbox('https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?w=1200&q=80')">
+        <img src="https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?w=400&q=80" alt="SSD">
+        <span class="zoom-badge">🔍 點擊放大</span>
+      </div>
+      <div style="font-weight:bold; font-size:0.85rem; color:var(--accent-blue);">M.2 NVMe SSD</div>
+    </div>
+  </div>
+</section>
+
+<!-- 錯誤 Warning 彈窗 -->
+<div class="modal-overlay" id="error-modal">
+  <div class="modal" style="border-color: var(--accent-red);">
+    <h3 style="color: var(--accent-red);">⚠️ 安裝錯誤 Warning</h3>
+    <p id="error-reason" style="margin: 8px 0; font-weight: bold;"></p>
+    <div class="unit-info-card">
+      <div class="unit-info-title" id="unit-title">💡 單元功能介紹：</div>
+      <div id="unit-desc"></div>
+    </div>
+    <button class="btn btn-danger" onclick="closeErrorModal()" style="width: 100%; margin-top: 5px;">明白了，繼續挑戰</button>
+  </div>
+</div>
+
+<!-- 結算彈窗 -->
+<div class="modal-overlay" id="result-modal">
+  <div class="modal">
+    <h2>🎉 組裝成功！</h2>
+    <p style="margin:10px 0;">最終得分：<span id="final-score" style="color:var(--accent-blue); font-weight:bold; font-size:1.4rem;">0</span></p>
+    <input type="text" id="player-nickname" placeholder="請輸入姓名/學號" style="width:100%; padding:10px; margin-bottom:10px; border-radius:10px; border:2px solid var(--border-dark); text-align:center;">
+    <button class="btn" onclick="submitScore()" style="width:100%;">提交分數</button>
+  </div>
+</div>
+
+<div class="lightbox-modal" id="lightbox" onclick="closeLightbox()">
+  <img class="lightbox-content" id="lightbox-img" src="" alt="放大圖">
+</div>
+
+<script>
+  const HARDWARE_FUNCTIONS = {
+    cpu: { name: "CPU (中央處理器)", desc: "電腦的大腦，負責執行所有指令、算術運算與邏輯判斷。必須安裝在主機板的 LGA/AM5 座扣具內。" },
+    fan: { name: "CPU 散熱器", desc: "防止 CPU 高速運作時因過熱而降頻或燒毀，必須緊貼在 CPU 上方將熱量排出。" },
+    ram: { name: "SDRAM / DDR5 (主記憶體)", desc: "負責暫存正在執行的程式數據，速度極快但關機後資料消失。須插入長條形 DIMM 插槽。" },
+    m2: { name: "M.2 NVMe SSD (固態硬碟)", desc: "高速永久儲存設備，儲存作業系統與個人檔案。形狀似口香糖，平行鎖在主機板上。" },
+    sata: { name: "SATA 硬碟/光碟機介面", desc: "用於連接傳統大容量 HDD 硬碟或 2.5 吋 SSD，透過數據線傳輸資料。" },
+    pcie: { name: "PCIe 獨立顯示卡 (GPU)", desc: "專門處理 3D 繪圖與影像算力，自帶風扇，長度較長，須插入主機板下方金屬加固的 PCIe 插槽。" },
+    power: { name: "24-pin ATX 電源插座", desc: "將電源供應器 (PSU) 的電力輸送至主機板，為各個元件供電的主要通道。" }
+  };
+
+  const RAW_SVGS = {
+    CPU: `<svg viewBox="0 0 100 100"><rect x="10" y="10" width="80" height="80" rx="8" fill="#ffb703" stroke="#1e293b" stroke-width="4"/><rect x="25" y="25" width="50" height="50" rx="4" fill="#e2e8f0" stroke="#1e293b" stroke-width="4"/><rect x="35" y="35" width="30" height="30" fill="#cbd5e1" stroke="#1e293b" stroke-width="2"/></svg>`,
+    FAN: `<svg viewBox="0 0 100 100"><rect x="10" y="10" width="80" height="80" rx="12" fill="#4ea8de" stroke="#1e293b" stroke-width="4"/><circle cx="50" cy="50" r="28" fill="#ffffff" stroke="#1e293b" stroke-width="4"/><circle cx="50" cy="50" r="8" fill="#1e293b"/></svg>`,
+    RAM: `<svg viewBox="0 0 100 100"><rect x="20" y="10" width="60" height="80" rx="6" fill="#ff758f" stroke="#1e293b" stroke-width="4"/><rect x="30" y="20" width="40" height="15" fill="#3a86ff" rx="2"/><line x1="25" y1="80" x2="75" y2="80" stroke="#ffbe0b" stroke-width="6"/></svg>`,
+    M2: `<svg viewBox="0 0 100 100"><rect x="10" y="30" width="80" height="40" rx="4" fill="#fb8500" stroke="#1e293b" stroke-width="4"/><rect x="25" y="38" width="22" height="24" fill="#1e293b" rx="2"/><circle cx="18" cy="50" r="4" fill="#ffffff"/></svg>`,
+    SATA: `<svg viewBox="0 0 100 100"><rect x="15" y="15" width="70" height="70" rx="8" fill="#b5179e" stroke="#1e293b" stroke-width="4"/><circle cx="50" cy="50" r="20" fill="#ffffff" stroke="#1e293b" stroke-width="3"/></svg>`,
+    GPU: `<svg viewBox="0 0 100 100"><rect x="5" y="20" width="90" height="50" rx="6" fill="#7209b7" stroke="#1e293b" stroke-width="4"/><circle cx="25" cy="45" r="10" fill="#ffffff"/><circle cx="50" cy="45" r="10" fill="#ffffff"/><circle cx="75" cy="45" r="10" fill="#ffffff"/></svg>`,
+    POWER: `<svg viewBox="0 0 100 100"><rect x="15" y="20" width="70" height="60" rx="8" fill="#52b788" stroke="#1e293b" stroke-width="4"/><line x1="25" y1="35" x2="75" y2="35" stroke="#1e293b" stroke-width="4"/></svg>`
+  };
+
+  document.querySelectorAll('[data-svg]').forEach(el => {
+    const key = el.getAttribute('data-svg');
+    if (RAW_SVGS[key]) el.innerHTML = RAW_SVGS[key];
+  });
+
+  const syncChannel = window.BroadcastChannel ? new BroadcastChannel('diy_competition_channel') : null;
+  if (syncChannel) {
+    syncChannel.onmessage = (e) => {
+      if (e.data?.type === 'SCORE_UPDATE') saveLocalAndRender(e.data.record, false);
+      if (e.data?.type === 'CLEAR_ALL') { localStorage.removeItem('diy_leaderboard'); renderLeaderboard(); }
+    };
+  }
+
+  let activeSelectedComp = null;
+  let draggedType = null;
+  let installedCount = 0;
+  let score = 0;
+  let timeRemaining = 180;
+
+  let timerInterval = setInterval(() => {
+    timeRemaining--;
+    document.getElementById('timer-display').textContent = timeRemaining;
+    if (timeRemaining <= 0) endGame();
+  }, 1000);
+
+  function closeWarning() {
+    document.getElementById('warning-popup').style.display = 'none';
+  }
+
+  function toggleKnowledge(card) {
+    card.classList.toggle('active');
+  }
+
+  // Drag Event Handlers
+  document.querySelectorAll('.component').forEach(c => {
+    c.addEventListener('dragstart', function(e) { 
+      draggedType = this.dataset.type;
+      if (e.dataTransfer) e.dataTransfer.setData('text/plain', this.dataset.type);
+    });
+
+    c.addEventListener('click', function() {
+      if (this.classList.contains('installed')) return;
+      document.querySelectorAll('.component').forEach(el => el.classList.remove('selected'));
+      activeSelectedComp = this;
+      draggedType = this.dataset.type;
+      this.classList.add('selected');
+    });
+  });
+
+  document.querySelectorAll('.slot').forEach(s => {
+    s.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
+    
+    s.addEventListener('drop', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const type = e.dataTransfer ? e.dataTransfer.getData('text/plain') : draggedType;
+      handlePlacement(type || draggedType, this);
+    });
+
+    s.addEventListener('click', function() {
+      if (activeSelectedComp && draggedType) {
+        handlePlacement(draggedType, this);
+      }
+    });
+  });
+
+  function handlePlacement(incomingType, targetSlot) {
+    if (!incomingType) return;
+    const targetType = targetSlot.dataset.type;
+
+    if (incomingType === targetType) {
+      targetSlot.classList.add('correct');
+
+      const labelSpan = targetSlot.querySelector('.slot-label');
+      if (labelSpan) {
+        if (incomingType === 'm2') labelSpan.textContent = 'M.2 SSD (已安裝)';
+        else if (incomingType === 'pcie') labelSpan.textContent = 'PCIe 顯示卡 (已安裝)';
+        else if (incomingType === 'ram') labelSpan.textContent = targetSlot.id === 'slot-ram1' ? 'RAM 1' : 'RAM 2';
+        else if (incomingType === 'cpu') labelSpan.textContent = 'CPU (已安裝)';
+        else if (incomingType === 'fan') labelSpan.textContent = 'CPU 風扇 (已安裝)';
+        else if (incomingType === 'power') labelSpan.textContent = 'ATX 電源';
+        else if (incomingType === 'sata') labelSpan.textContent = 'SATA 硬碟';
+      }
+
+      if (incomingType === 'cpu' || incomingType === 'fan') {
+        const svgContainer = targetSlot.querySelector('.svg-container');
+        if (svgContainer) {
+          svgContainer.style.display = 'flex';
+          svgContainer.innerHTML = RAW_SVGS[incomingType.toUpperCase()];
+        }
+      }
+
+      const matchedComp = activeSelectedComp || document.querySelector(`.component[data-type="${incomingType}"]:not(.installed)`);
+      if (matchedComp) {
+        matchedComp.classList.remove('selected');
+        matchedComp.classList.add('installed');
+      }
+
+      installedCount++;
+      score += 10;
+      document.getElementById('progress-display').textContent = `${installedCount}/8`;
+
+      if (incomingType === 'cpu') document.getElementById('slot-fan').style.display = 'flex';
+      if (installedCount === 8) endGame();
+    } else {
+      targetSlot.classList.add('wrong');
+      setTimeout(() => targetSlot.classList.remove('wrong'), 500);
+      showErrorWarning(incomingType, targetType);
+    }
+    
+    if (activeSelectedComp) activeSelectedComp.classList.remove('selected');
+    activeSelectedComp = null;
+    draggedType = null;
+  }
+
+  function showErrorWarning(dragged, target) {
+    const dragInfo = HARDWARE_FUNCTIONS[dragged] || { name: dragged, desc: "" };
+    const targetInfo = HARDWARE_FUNCTIONS[target] || { name: target, desc: "" };
+
+    document.getElementById('error-reason').textContent = `錯誤！你將【${dragInfo.name}】拖入到了【${targetInfo.name}】的位置。`;
+    document.getElementById('unit-title').textContent = `💡 ${dragInfo.name} 的正確功能：`;
+    document.getElementById('unit-desc').textContent = dragInfo.desc;
+
+    document.getElementById('error-modal').style.display = 'flex';
+  }
+
+  function closeErrorModal() {
+    document.getElementById('error-modal').style.display = 'none';
+  }
+
+  function endGame() {
+    clearInterval(timerInterval);
+    document.getElementById('final-score').textContent = score + Math.floor(timeRemaining / 10) * 5;
+    document.getElementById('result-modal').style.display = 'flex';
+  }
+
+  function submitScore() {
+    const name = document.getElementById('player-nickname').value.trim() || '學生';
+    const finalScore = parseInt(document.getElementById('final-score').textContent);
+    const record = { name, score: finalScore, time: 180 - timeRemaining };
+
+    saveLocalAndRender(record, true);
+    document.getElementById('result-modal').style.display = 'none';
+  }
+
+  function saveLocalAndRender(record, shouldBroadcast) {
+    let list = JSON.parse(localStorage.getItem('diy_leaderboard') || '[]');
+    if (record) list.push(record);
+    list.sort((a,b) => b.score - a.score || a.time - b.time);
+    list = list.slice(0, 10);
+    localStorage.setItem('diy_leaderboard', JSON.stringify(list));
+    
+    renderLeaderboard();
+    if (shouldBroadcast && syncChannel) syncChannel.postMessage({ type: 'SCORE_UPDATE', record });
+  }
+
+  function renderLeaderboard() {
+    const list = JSON.parse(localStorage.getItem('diy_leaderboard') || '[]');
+    const tbody = document.getElementById('leaderboard-body');
+    tbody.innerHTML = list.map((item, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${escapeHtml(item.name)}</td>
+        <td style="color:var(--accent-blue);">${item.score}</td>
+        <td>${item.time}s</td>
+      </tr>
+    `).join('');
+  }
+
+  function clearLeaderboard() {
+    if (confirm("確定清空全班成績？")) {
+      localStorage.removeItem('diy_leaderboard');
+      renderLeaderboard();
+      if (syncChannel) syncChannel.postMessage({ type: 'CLEAR_ALL' });
+    }
+  }
+
+  function openLightbox(url) {
+    document.getElementById('lightbox-img').src = url;
+    document.getElementById('lightbox').style.display = 'flex';
+  }
+
+  function closeLightbox() {
+    document.getElementById('lightbox').style.display = 'none';
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
+  }
+
+  renderLeaderboard();
+</script>
+</body>
+</html>
