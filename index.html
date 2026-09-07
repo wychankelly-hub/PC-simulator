@@ -11,6 +11,7 @@
 <!-- Firebase SDKs for Real-Time Cross-Device Synchronization -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 
 <style>
   :root {
@@ -120,6 +121,7 @@
   .side-panel { flex: 1; min-width: 280px; display: flex; flex-direction: column; gap: 15px; }
   .panel-card { background: var(--card-bg); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 10px; border: 3px solid var(--border-dark); box-shadow: 4px 4px 0px var(--border-dark); }
   .btn { padding: 10px; border: 3px solid var(--border-dark); border-radius: 10px; font-weight: 800; cursor: pointer; background: var(--accent-blue); color: #fff; font-size: 0.85rem; box-shadow: 2px 2px 0px var(--border-dark); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-danger { background: var(--accent-red); }
 
   .leaderboard-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 5px; }
@@ -217,6 +219,7 @@
   <div class="side-panel">
     <div class="panel-card">
       <h3>🏆 全班雲端跨裝置排行榜</h3>
+      <div id="connection-status" style="font-size:0.75rem; font-weight:700; color:#ca8a04; margin:-4px 0 4px 0;">🟡 連接雲端中...</div>
       <div style="max-height: 250px; overflow-y: auto;">
         <table class="leaderboard-table">
           <thead><tr><th>排名</th><th>暱稱</th><th>分數</th><th>用時</th></tr></thead>
@@ -350,7 +353,8 @@
     <h2>🎉 組裝成功！</h2>
     <p style="margin:10px 0;">最終得分：<span id="final-score" style="color:var(--accent-blue); font-weight:bold; font-size:1.4rem;">0</span></p>
     <input type="text" id="player-nickname" placeholder="請輸入姓名/學號" style="width:100%; padding:10px; margin-bottom:10px; border-radius:10px; border:2px solid var(--border-dark); text-align:center;">
-    <button class="btn" onclick="submitScore()" style="width:100%;">提交分數</button>
+    <button class="btn" id="submit-btn" onclick="submitScore()" style="width:100%;">提交分數</button>
+    <div id="submit-status" style="font-size:0.75rem; font-weight:700; margin-top:8px; min-height:16px;"></div>
   </div>
 </div>
 
@@ -359,16 +363,90 @@
 </div>
 
 <script>
-  // Shared Public Firebase Database for Classroom Synchronization
+  // =====================================================================
+  // 🔧 老師設定區 — 請務必換成你自己 Firebase 專案的設定，否則跨裝置無法運作：
+  // 1. 到 https://console.firebase.google.com 建立一個新專案（免費）
+  // 2. 左側選單 → Build → Realtime Database → Create Database
+  //    （地區選 asia-southeast1，先以「測試模式」建立）
+  // 3. 專案總覽 → 齒輪 ⚙️ → 專案設定 → 一般 → 新增應用程式（網頁 </>）
+  //    複製那裡出現的整組 firebaseConfig，貼在下面覆蓋
+  // 4. Realtime Database → Rules 分頁，貼上以下設定並發佈（Publish）：
+  //    {
+  //      "rules": {
+  //        "leaderboard": {
+  //          ".read": "auth != null",
+  //          ".write": "auth != null"
+  //        }
+  //      }
+  //    }
+  //    （這樣只有經過下面「匿名登入」驗證的裝置才能讀寫，
+  //      比完全公開的 ".read": true, ".write": true 安全，
+  //      但學生毋須輸入任何帳號密碼）
+  // =====================================================================
+<script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
   const firebaseConfig = {
-    databaseURL: "https://pc-assembly-simulator-default-rtdb.asia-southeast1.firebasedatabase.app"
+    apiKey: "AIzaSyABBfjJ0vK0uKNwkZaGXj9RKiPhTCpTr3w",
+    authDomain: "pc-assembly-2026.firebaseapp.com",
+    projectId: "pc-assembly-2026",
+    storageBucket: "pc-assembly-2026.firebasestorage.app",
+    messagingSenderId: "797867509345",
+    appId: "1:797867509345:web:1e14f14686e1c1b19d4c20",
+    measurementId: "G-0SH5YWFQJL"
   };
-  
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+</script>
   if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
   }
   const db = firebase.database();
   const leaderboardRef = db.ref('leaderboard');
+
+  let isAuthReady = false;
+  let listenerAttached = false;
+
+  function setConnectionStatus(text, color) {
+    const el = document.getElementById('connection-status');
+    if (el) { el.textContent = text; el.style.color = color; }
+  }
+
+  function mapFirebaseError(err) {
+    const code = (err && err.code) || '';
+    if (code.indexOf('PERMISSION_DENIED') !== -1 || code.indexOf('permission-denied') !== -1) {
+      return '❌ 資料庫拒絕存取，請通知老師檢查 Firebase Rules 設定';
+    }
+    if (code.indexOf('auth') !== -1) {
+      return '❌ 雲端登入失敗，請通知老師檢查 Firebase 設定';
+    }
+    return '❌ 提交失敗：' + (err && err.message ? err.message : '網絡連線不穩定，請重試');
+  }
+
+  // 每部裝置開啟頁面後，會自動以「匿名身份」登入 Firebase，
+  // 學生毋須輸入帳戶密碼，但配合上面的 Rules 設定可阻擋外部亂寫入。
+  firebase.auth().signInAnonymously().catch(err => {
+    console.error('Firebase 匿名登入失敗：', err);
+    setConnectionStatus('🔴 雲端登入失敗，請通知老師', '#dc2626');
+  });
+
+  firebase.auth().onAuthStateChanged(user => {
+    if (user) {
+      isAuthReady = true;
+      setConnectionStatus('🟢 已連線，成績即時同步中', '#16a34a');
+      attachLeaderboardListener();
+    } else {
+      isAuthReady = false;
+    }
+  });
 
   const HARDWARE_FUNCTIONS = {
     cpu: { name: "CPU (中央處理器)", desc: "電腦的大腦，負責執行所有指令、算術運算與邏輯判斷。必須安裝在主機板的 LGA/AM5 座扣具內。" },
@@ -400,6 +478,7 @@
   let installedCount = 0;
   let score = 0;
   let timeRemaining = 180;
+  let isSubmitted = false;
 
   let timerInterval = setInterval(() => {
     timeRemaining--;
@@ -513,46 +592,90 @@
 
   function endGame() {
     clearInterval(timerInterval);
-    document.getElementById('final-score').textContent = score + Math.floor(timeRemaining / 10) * 5;
+    const timeTaken = 180 - timeRemaining;
+    const finalScore = score + Math.floor(timeRemaining / 10) * 5;
+    document.getElementById('final-score').textContent = finalScore;
     document.getElementById('result-modal').style.display = 'flex';
   }
 
   function submitScore() {
-    const name = document.getElementById('player-nickname').value.trim() || '學生';
-    const finalScore = parseInt(document.getElementById('final-score').textContent);
-    const record = { name, score: finalScore, time: 180 - timeRemaining };
+    if (isSubmitted) return;
 
-    leaderboardRef.push(record);
-    document.getElementById('result-modal').style.display = 'none';
+    const nicknameInput = document.getElementById('player-nickname');
+    const name = nicknameInput.value.trim() || '學生';
+    const finalScore = parseInt(document.getElementById('final-score').textContent, 10);
+    const timeTaken = 180 - timeRemaining;
+
+    const submitBtn = document.getElementById('submit-btn');
+    const statusText = document.getElementById('submit-status');
+
+    if (!isAuthReady) {
+      if (statusText) { statusText.textContent = '⏳ 尚未連接雲端，請稍等 2-3 秒後再按一次「提交分數」'; statusText.style.color = '#ca8a04'; }
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = '提交中...';
+    if (statusText) statusText.textContent = '';
+
+    const record = { name, score: finalScore, time: timeTaken, timestamp: Date.now() };
+
+    leaderboardRef.push(record)
+      .then(() => {
+        isSubmitted = true;
+        document.getElementById('result-modal').style.display = 'none';
+      })
+      .catch(err => {
+        console.error('提交失敗：', err);
+        if (statusText) { statusText.textContent = mapFirebaseError(err); statusText.style.color = '#dc2626'; }
+        submitBtn.disabled = false;
+        submitBtn.textContent = '重試提交';
+      });
   }
 
-  // Real-time listener: updates instantly across all connected student devices
-  leaderboardRef.on('value', (snapshot) => {
-    const data = snapshot.val();
-    let list = [];
-    if (data) {
-      list = Object.values(data);
-      list.sort((a,b) => b.score - a.score || a.time - b.time);
-      list = list.slice(0, 10);
-    }
-    renderLeaderboard(list);
-  });
+  // Real-time listener: syncs score updates across all devices instantly
+  // (only attached once anonymous auth succeeds, so it works whether the
+  // Realtime Database rules require auth or are fully public)
+  function attachLeaderboardListener() {
+    if (listenerAttached) return;
+    listenerAttached = true;
+    leaderboardRef.on('value', (snapshot) => {
+      const data = snapshot.val();
+      let list = [];
+      if (data) {
+        list = Object.values(data);
+        // Sort by score (descending), then time (ascending)
+        list.sort((a, b) => b.score - a.score || a.time - b.time);
+        list = list.slice(0, 10);
+      }
+      renderLeaderboard(list);
+    }, (error) => {
+      console.error("Firebase read error:", error);
+      setConnectionStatus('🔴 讀取排行榜失敗，請通知老師', '#dc2626');
+    });
+  }
 
   function renderLeaderboard(list) {
     const tbody = document.getElementById('leaderboard-body');
+    if (!list || list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">暫無紀錄</td></tr>`;
+      return;
+    }
     tbody.innerHTML = list.map((item, i) => `
       <tr>
         <td>${i + 1}</td>
-        <td>${escapeHtml(item.name)}</td>
-        <td style="color:var(--accent-blue);">${item.score}</td>
-        <td>${item.time}s</td>
+        <td>${escapeHtml(item.name || '未知')}</td>
+        <td style="color:var(--accent-blue);">${item.score || 0}</td>
+        <td>${item.time || 0}s</td>
       </tr>
     `).join('');
   }
 
   function clearLeaderboard() {
     if (confirm("確定清空全班雲端成績？")) {
-      leaderboardRef.remove();
+      leaderboardRef.remove().catch(err => {
+        alert(mapFirebaseError(err));
+      });
     }
   }
 
@@ -566,7 +689,7 @@
   }
 
   function escapeHtml(str) {
-    return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
+    return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
   }
 </script>
 </body>
