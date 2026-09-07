@@ -383,29 +383,18 @@
   //      比完全公開的 ".read": true, ".write": true 安全，
   //      但學生毋須輸入任何帳號密碼）
   // =====================================================================
-<script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
-
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
   const firebaseConfig = {
     apiKey: "AIzaSyABBfjJ0vK0uKNwkZaGXj9RKiPhTCpTr3w",
     authDomain: "pc-assembly-2026.firebaseapp.com",
+    // ⚠️ 呢個databaseURL係根據你個project ID估出嚟，務必去Firebase Console →
+    // Realtime Database 頁面頂部，覆核／複製返嗰度顯示嘅真實網址嚟覆蓋呢一行
+    databaseURL: "https://pc-assembly-2026-default-rtdb.asia-southeast1.firebasedatabase.app",
     projectId: "pc-assembly-2026",
     storageBucket: "pc-assembly-2026.firebasestorage.app",
     messagingSenderId: "797867509345",
-    appId: "1:797867509345:web:1e14f14686e1c1b19d4c20",
-    measurementId: "G-0SH5YWFQJL"
+    appId: "1:797867509345:web:1e14f14686e1c1b19d4c20"
   };
 
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
-</script>
   if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
   }
